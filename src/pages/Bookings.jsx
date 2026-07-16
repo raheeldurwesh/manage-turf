@@ -150,11 +150,55 @@ export default function Bookings() {
             </tr>)}
           </tbody></table></div>
 
-          <div className="md:hidden space-y-3 p-4">{bookings.map(b=><div key={b.id} className="p-4 rounded-xl bg-gray-50 dark:bg-dark-700/50 space-y-3">
-            <div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold',nameToColor(b.customer_name))}>{getInitials(b.customer_name)}</div><div><p className="text-sm font-medium text-gray-900 dark:text-white">{b.customer_name}</p><p className="text-xs text-gray-400">{formatPhone(b.customer_phone)}</p></div></div><Badge color={BOOKING_STATUS_COLORS[b.booking_status]}>{BOOKING_STATUS_LABELS[b.booking_status]}</Badge></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-500">{b.turfs?.name} • {getRelativeDateLabel(b.booking_date)}</span><span className="font-semibold text-gray-900 dark:text-white">{formatCurrency(b.total_amount)}</span></div>
-            {b.booking_status==='confirmed'&&<div className="flex gap-2"><Button variant="secondary" size="sm" icon={Pencil} onClick={()=>openEdit(b)}>Edit</Button><Button size="sm" icon={CheckCircle} onClick={()=>completeBooking(b.id).then(()=>toast.success('Done'))}>Complete</Button></div>}
-          </div>)}</div>
+          <div className="md:hidden space-y-3 p-4">
+            {bookings.map(b => (
+              <div 
+                key={b.id} 
+                onClick={() => { setSelected(b); setShowDetail(true) }} 
+                className="p-4 rounded-xl bg-gray-50 dark:bg-dark-700/50 space-y-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-700 transition-colors border border-transparent hover:border-gray-200 dark:hover:border-dark-600"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold', nameToColor(b.customer_name))}>
+                      {getInitials(b.customer_name)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{b.customer_name}</p>
+                      <p className="text-xs text-gray-400">{formatPhone(b.customer_phone)}</p>
+                    </div>
+                  </div>
+                  <Badge color={BOOKING_STATUS_COLORS[b.booking_status]}>{BOOKING_STATUS_LABELS[b.booking_status]}</Badge>
+                </div>
+                
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">{b.turfs?.name} • {getRelativeDateLabel(b.booking_date)}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{formatCurrency(b.total_amount)}</span>
+                </div>
+                
+                {b.booking_status === 'confirmed' && (
+                  <div className="flex gap-2 pt-1" onClick={e => e.stopPropagation()}>
+                    <Button 
+                      variant="secondary" 
+                      size="sm" 
+                      icon={Pencil} 
+                      onClick={(e) => { e.stopPropagation(); openEdit(b); }}
+                      className="flex-1 justify-center"
+                    >
+                      Edit
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      icon={CheckCircle} 
+                      onClick={(e) => { e.stopPropagation(); completeBooking(b.id).then(() => toast.success('Done')); }}
+                      className="flex-1 justify-center"
+                    >
+                      Complete
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
 
           {totalPages>1&&<div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-dark-700">
             <p className="text-sm text-gray-500">Showing {page*pageSize+1}-{Math.min((page+1)*pageSize,totalCount)} of {totalCount}</p>
