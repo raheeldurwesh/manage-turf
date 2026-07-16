@@ -95,7 +95,7 @@ export default function CalendarPage() {
     return map
   }, [bookings])
 
-  const timeLabels = getTimeLabels(6, 23)
+  const timeLabels = getTimeLabels(0, 23)
   const turfOpts = turfs.map(t => ({ value: t.id, label: t.name }))
   const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -191,12 +191,17 @@ export default function CalendarPage() {
                   const slotBookings = dayBookings.filter(b => {
                     const bStart = parseInt(b.start_time?.split(':')[0]||0)
                     const bEnd = parseInt(b.end_time?.split(':')[0]||0)
-                    return slot.hour >= bStart && slot.hour < bEnd
+                    return bEnd < bStart
+                      ? (slot.hour >= bStart || slot.hour < bEnd)
+                      : (slot.hour >= bStart && slot.hour < bEnd)
                   })
                   const isBlocked = blockedSlots.some(bl => {
                     const bs = parseInt(bl.start_time?.split(':')[0]||0)
                     const be = parseInt(bl.end_time?.split(':')[0]||0)
-                    return slot.hour >= bs && slot.hour < be && format(selectedDay,'yyyy-MM-dd') === bl.block_date
+                    const matchesTime = be < bs
+                      ? (slot.hour >= bs || slot.hour < be)
+                      : (slot.hour >= bs && slot.hour < be)
+                    return matchesTime && format(selectedDay,'yyyy-MM-dd') === bl.block_date
                   })
                   return (
                     <div key={slot.hour} className={cn('flex min-h-[56px]',
