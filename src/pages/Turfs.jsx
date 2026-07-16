@@ -12,11 +12,13 @@ import { getTurfs, createTurf, updateTurf, deleteTurf, uploadTurfImage } from '.
 import { SPORT_TYPES, AMENITIES, generateTimeSlots } from '../utils/constants'
 import { formatCurrency, cn, formatTime12h } from '../utils/helpers'
 import { useToast } from '../context/ToastContext'
+import { useAuth } from '../context/AuthContext'
 
-const INIT = { name:'', description:'', sport_type:'cricket', price_per_hour:1000, location:'', opening_time:'06:00', closing_time:'23:00', amenities:[], images:[], is_active:true }
+const INIT = { name:'', description:'', sport_type:'cricket', price_per_hour:1000, location:'', opening_time:'06:00', closing_time:'23:00', amenities:[], images:[], is_active:true, rules: [] }
 
 export default function Turfs() {
   const { toast } = useToast()
+  const { profile, updateProfile } = useAuth()
   const [turfs, setTurfs] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -37,11 +39,35 @@ export default function Turfs() {
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error('Turf name required'); return }
     setSaving(true)
+    
+    // Split out rules since they are stored in profiles settings JSONB
+    const { rules, ...turfData } = form
     const result = editing
-      ? await updateTurf(editing.id, form)
-      : await createTurf(form)
-    if (result.error) toast.error(result.error.message || 'Failed')
-    else { toast.success(editing ? 'Updated!' : 'Created!'); setShowModal(false); setEditing(null); setForm(INIT); fetchTurfs() }
+      ? await updateTurf(editing.id, turfData)
+      : await createTurf(turfData)
+      
+    if (result.error) {
+      toast.error(result.error.message || 'Failed')
+    } else {
+      const turfId = result.data.id
+      const updatedRules = {
+        ...(profile?.settings?.pricingRules || {}),
+        [turfId]: rules || []
+      }
+      
+      await updateProfile({
+        settings: {
+          ...(profile?.settings || {}),
+          pricingRules: updatedRules
+        }
+      })
+      
+      toast.success(editing ? 'Updated!' : 'Created!')
+      setShowModal(false)
+      setEditing(null)
+      setForm(INIT)
+      fetchTurfs()
+    }
     setSaving(false)
   }
 
@@ -88,9 +114,53 @@ export default function Turfs() {
     }))
   }
 
+  const handleAddRule = () => {
+    const newRule = {
+      id: 'rule_' + Math.random().toString(36).substr(2, 9),
+      name: 'Peak Hours',
+      days: [0, 6], // Default to weekends (Sunday, Saturday)
+      startTime: '17:00',
+      endTime: '22:00',
+      rateType: 'multiplier',
+      value: 1.2
+    }
+    setForm(prev => ({
+      ...prev,
+      rules: [...(prev.rules || []), newRule]
+    }))
+  }
+
+  const handleUpdateRule = (index, key, val) => {
+    setForm(prev => {
+      const updatedRules = [...(prev.rules || [])]
+      updatedRules[index] = { ...updatedRules[index], [key]: val }
+      return { ...prev, rules: updatedRules }
+    })
+  }
+
+  const handleRemoveRule = (index) => {
+    setForm(prev => ({
+      ...prev,
+      rules: (prev.rules || []).filter((_, idx) => idx !== index)
+    }))
+  }
+
   const openEdit = (t) => {
     setEditing(t)
-    setForm({ name:t.name, description:t.description||'', sport_type:t.sport_type||'cricket', price_per_hour:t.price_per_hour, location:t.location||'', opening_time:t.opening_time||'06:00', closing_time:t.closing_time||'23:00', amenities:t.amenities||[], images:t.images||[], is_active:t.is_active })
+    const turfRules = profile?.settings?.pricingRules?.[t.id] || []
+    setForm({ 
+      name:t.name, 
+      description:t.description||'', 
+      sport_type:t.sport_type||'cricket', 
+      price_per_hour:t.price_per_hour, 
+      location:t.location||'', 
+      opening_time:t.opening_time||'06:00', 
+      closing_time:t.closing_time||'23:00', 
+      amenities:t.amenities||[], 
+      images:t.images||[], 
+      is_active:t.is_active,
+      rules: turfRules
+    })
     setShowModal(true)
   }
 
@@ -201,6 +271,114 @@ export default function Turfs() {
                 )}>{a}</button>
               ))}
             </div>
+          </div>
+
+          {/* Peak Pricing Rules */}
+          <div className="md:col-span-2 space-y-3 p-4 bg-gray-50 dark:bg-dark-700/50 rounded-xl border border-gray-100 dark:border-dark-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Peak Hours & Dynamic Pricing</h4>
+                <p className="text-xs text-gray-500">Configure peak-hour surcharges or discount rates</p>
+              </div>
+              <Button type="button" size="sm" variant="secondary" onClick={handleAddRule}>+ Add Rule</Button>
+            </div>
+            
+            {form.rules && form.rules.length > 0 ? (
+              <div className="space-y-3 mt-2">
+                {form.rules.map((rule, idx) => (
+                  <div key={rule.id || idx} className="p-3 bg-white dark:bg-dark-800 rounded-lg border border-gray-100 dark:border-dark-700 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Rule Name (e.g. Weekend Evening)" 
+                        value={rule.name || ''} 
+                        onChange={e => handleUpdateRule(idx, 'name', e.target.value)}
+                        className="input-base py-1 px-2 text-xs font-medium max-w-[200px]"
+                      />
+                      <button type="button" onClick={() => handleRemoveRule(idx)} className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-md">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-0.5">Start Time</label>
+                        <select 
+                          value={rule.startTime} 
+                          onChange={e => handleUpdateRule(idx, 'startTime', e.target.value)}
+                          className="input-base py-1.5 px-2"
+                        >
+                          {timeSlots.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-0.5">End Time</label>
+                        <select 
+                          value={rule.endTime} 
+                          onChange={e => handleUpdateRule(idx, 'endTime', e.target.value)}
+                          className="input-base py-1.5 px-2"
+                        >
+                          {timeSlots.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-0.5">Surcharge Type</label>
+                        <select 
+                          value={rule.rateType} 
+                          onChange={e => handleUpdateRule(idx, 'rateType', e.target.value)}
+                          className="input-base py-1.5 px-2"
+                        >
+                          <option value="multiplier">Multiplier (e.g. 1.2x)</option>
+                          <option value="surcharge">Surcharge (+₹/hr)</option>
+                          <option value="fixed">Fixed Rate (₹/hr)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-0.5">Value</label>
+                        <input 
+                          type="number" 
+                          step={rule.rateType === 'multiplier' ? '0.05' : '100'} 
+                          value={rule.value} 
+                          onChange={e => handleUpdateRule(idx, 'value', Number(e.target.value))}
+                          className="input-base py-1 px-2"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="block text-[10px] text-gray-400 mb-1">Applicable Days</span>
+                      <div className="flex flex-wrap gap-1">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, dayIdx) => {
+                          const isSel = rule.days?.includes(dayIdx)
+                          return (
+                            <button
+                              type="button"
+                              key={d}
+                              onClick={() => {
+                                const newDays = isSel 
+                                  ? rule.days.filter(x => x !== dayIdx)
+                                  : [...(rule.days || []), dayIdx];
+                                handleUpdateRule(idx, 'days', newDays);
+                              }}
+                              className={cn(
+                                "px-2 py-0.5 text-[10px] rounded-md border transition-all font-medium",
+                                isSel
+                                  ? "bg-primary-600 border-primary-600 text-white"
+                                  : "bg-gray-50 dark:bg-dark-700 border-gray-200 dark:border-dark-600 text-gray-500 hover:bg-gray-100"
+                              )}
+                            >
+                              {d}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 text-center py-4">No pricing rules configured for this turf.</p>
+            )}
           </div>
 
           <div className="md:col-span-2 flex items-center justify-between p-3 bg-gray-50 dark:bg-dark-700 rounded-xl">
