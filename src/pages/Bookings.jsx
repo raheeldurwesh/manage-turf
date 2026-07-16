@@ -9,12 +9,13 @@ import Select from '../components/ui/Select'
 import Modal from '../components/ui/Modal'
 import EmptyState from '../components/ui/EmptyState'
 import { SkeletonTable } from '../components/ui/Skeleton'
-import { formatCurrency, formatTime12h, formatPhone, getInitials, nameToColor, cn, calculatePrice, isValidPhone, getRelativeDateLabel } from '../utils/helpers'
+import { formatCurrency, formatTime12h, formatPhone, getInitials, nameToColor, cn, calculatePrice, calculateOptimizedPrice, isValidPhone, getRelativeDateLabel } from '../utils/helpers'
 import { getBookings, createBooking, updateBooking, cancelBooking, completeBooking, checkSlotAvailability } from '../services/bookingService'
 import { getActiveTurfs } from '../services/turfService'
 import { getBookingConfirmationLink } from '../services/whatsappService'
 import { BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS, PAYMENT_STATUS_LABELS, PAYMENT_STATUS_COLORS, generateTimeSlots } from '../utils/constants'
 import { useToast } from '../context/ToastContext'
+import { useAuth } from '../context/AuthContext'
 import { supabase } from '../services/supabase'
 
 const INIT = { customer_name:'', customer_phone:'', customer_email:'', turf_id:'', booking_date: new Date().toISOString().split('T')[0], start_time:'', end_time:'', total_amount:0, payment_status:'pending', notes:'' }
@@ -22,6 +23,7 @@ const INIT = { customer_name:'', customer_phone:'', customer_email:'', turf_id:'
 export default function Bookings() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { toast } = useToast()
+  const { profile } = useAuth()
   const [bookings, setBookings] = useState([])
   const [turfs, setTurfs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -57,11 +59,14 @@ export default function Bookings() {
   }, [fetchBookings])
 
   useEffect(() => {
-    if (form.turf_id && form.start_time && form.end_time) {
+    if (form.turf_id && form.start_time && form.end_time && form.booking_date) {
       const t = turfs.find(t=>t.id===form.turf_id)
-      if (t) setForm(p=>({...p, total_amount: Math.max(0, calculatePrice(form.start_time, form.end_time, t.price_per_hour))}))
+      if (t) {
+        const turfRules = profile?.settings?.pricingRules?.[form.turf_id] || []
+        setForm(p=>({...p, total_amount: Math.max(0, calculateOptimizedPrice(form.booking_date, form.start_time, form.end_time, t.price_per_hour, turfRules))}))
+      }
     }
-  }, [form.turf_id, form.start_time, form.end_time, turfs])
+  }, [form.turf_id, form.start_time, form.end_time, form.booking_date, turfs, profile])
 
   const validate = () => {
     const e = {}
@@ -166,7 +171,23 @@ export default function Bookings() {
           <Select label="Turf *" options={turfOpts} placeholder="Select Turf" value={form.turf_id} onChange={e=>setForm({...form,turf_id:e.target.value})} error={errors.turf_id} />
           <Input label="Date *" type="date" value={form.booking_date} onChange={e=>setForm({...form,booking_date:e.target.value})} error={errors.booking_date} />
           <div className="grid grid-cols-2 gap-3"><Select label="Start *" options={timeSlots} placeholder="Start" value={form.start_time} onChange={e=>setForm({...form,start_time:e.target.value})} error={errors.start_time} /><Select label="End *" options={timeSlots} placeholder="End" value={form.end_time} onChange={e=>setForm({...form,end_time:e.target.value})} error={errors.end_time} /></div>
-          <Input label="Amount (₹)" type="number" icon={Wallet} value={form.total_amount} onChange={e=>setForm({...form,total_amount:Number(e.target.value)})} />
+          <div>
+            <Input label="Amount (₹)" type="number" icon={Wallet} value={form.total_amount} onChange={e=>setForm({...form,total_amount:Number(e.target.value)})} />
+            {(() => {
+              const t = turfs.find(x => x.id === form.turf_id)
+              if (t && form.start_time && form.end_time) {
+                const basePrice = calculatePrice(form.start_time, form.end_time, t.price_per_hour)
+                if (form.total_amount > basePrice) {
+                  return (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1 font-semibold">
+                      ⚡ Peak rate applied (Base: ₹{basePrice})
+                    </p>
+                  )
+                }
+              }
+              return null
+            })()}
+          </div>
           <Select label="Payment" options={payOpts} value={form.payment_status} onChange={e=>setForm({...form,payment_status:e.target.value})} />
           <div className="md:col-span-2"><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Notes</label><textarea className="input-base min-h-[80px] resize-none" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} /></div>
         </div>
