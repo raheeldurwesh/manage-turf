@@ -78,7 +78,7 @@ export const NOTIFICATION_TYPE = {
 }
 
 // Time slots (30 min intervals)
-export const generateTimeSlots = (start = '06:00', end = '23:00') => {
+export const generateTimeSlots = (start = '00:00', end = '23:30') => {
   const slots = []
   let [h, m] = start.split(':').map(Number)
   const [endH, endM] = end.split(':').map(Number)
